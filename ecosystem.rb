@@ -40,11 +40,21 @@ class Grid
 
     def get(vector)
         return @space[vector.x + @width * vector.y]
-
     end
     
     def set(vector, value)
         @space[vector.x + @width * vector.y] = value
+    end
+
+    def for_each(f, context)
+        (0..@height).each do |y|
+            (0..@width).each do |x|
+                value = @space[x+y*@width]
+                if value != nil
+                    f.call(context, value, Vector.new(x, y))
+                end
+            end
+        end
     end
 end
 
@@ -68,7 +78,10 @@ class Action
 end
 
 class BouncingCritter
-    @direction = $directions.keys.sample
+    attr_accessor :direction
+    def initialize
+        @direction = $directions.keys.sample
+    end
 
     def act(view)
         if view.look(@direction) != "."
@@ -121,11 +134,55 @@ class World
         end
         return output
     end
+    def turn
+        acted = []
+        @grid.for_each(lambda {
+            |world, critter, vector|
+            if (critter.class.method_defined? :act and !acted.include?(critter)) then
+                self.class.let_act(critter, vector)
+            end
+        }, self)
+    end
+    def let_act(critter, vector)
+        if critter.class == BouncingCritter
+            critter.health -= 1
+            if critter.health == 0
+                @grid.set(Vector.new(vector.x, vector.y), Carrion)
+            end
+        end
+        action = critter.act(View.new(self, vector))
+        if action && action.type == "move"
+            dest = self.check_destination(action, vector)
+            if (dest && @grid.get(dest).nil?)
+                @grid.set(vector, nil)
+                @grid.set(dest, critter)
+            end
+        end
+    end
+end
+
+class View
+    attr_accessor :world, :vector
+    def initialize(world, vector)
+        @world = world
+        @vector = vector
+    end
 end
 
 class Wall
+    def act
+        return false
+    end
+end
+
+class Carrion
 end
 
 world = World.new($plan, {"#": Wall, "o": BouncingCritter})
 
-puts world.to_string
+def show_frame(world)
+    world.turn
+    puts `clear`
+    puts world.to_string
+end
+show_frame(world)
