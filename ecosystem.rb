@@ -78,9 +78,10 @@ class Action
 end
 
 class BouncingCritter
-    attr_accessor :direction
+    attr_accessor :direction, :health
     def initialize
         @direction = $directions.keys.sample
+        @health = 3
     end
 
     def act(view)
@@ -125,8 +126,8 @@ class World
 
     def to_string
         output = ""
-        for y in 0..@grid.height do
-            for x in 0..@grid.width do
+        for y in 0..@grid.height-1 do
+            for x in 0..@grid.width-1 do
                 element = @grid.get(Vector.new(x, y))
                 output += char_from_element(element)
             end
@@ -134,20 +135,12 @@ class World
         end
         return output
     end
-    def turn
-        acted = []
-        @grid.for_each(lambda {
-            |world, critter, vector|
-            if (critter.class.method_defined? :act and !acted.include?(critter)) then
-                self.class.let_act(critter, vector)
-            end
-        }, self)
-    end
     def let_act(critter, vector)
         if critter.class == BouncingCritter
             critter.health -= 1
-            if critter.health == 0
-                @grid.set(Vector.new(vector.x, vector.y), Carrion)
+            if critter.health < 0
+                @grid.set(vector, Carrion)
+                return
             end
         end
         action = critter.act(View.new(self, vector))
@@ -159,6 +152,26 @@ class World
             end
         end
     end
+
+    def check_destination(action, vector)
+        if $directions.key?(action.direction)
+            dest = vector.plus($directions[action.direction])
+            if @grid.is_inside(dest)
+                return dest
+            end
+        end
+    end
+
+    def turn
+        acted = []
+        @grid.for_each(lambda {
+            |world, critter, vector|
+            if (critter.class.method_defined? :act \
+                    and !acted.include?(critter))
+                self.let_act(critter, vector)
+            end
+        }, self)
+    end
 end
 
 class View
@@ -167,22 +180,48 @@ class View
         @world = world
         @vector = vector
     end
-end
-
-class Wall
-    def act
-        return false
+    def look(dir)
+        target = @vector.plus($directions[dir])
+        if (@world.grid.is_inside(target))
+            return char_from_element(@world.grid.get(target))
+        else
+            return "#"
+        end
+    end
+    def find_all(ch)
+        found = []
+        $directions.keys.each do |dir|
+            if self.look(dir) == ch
+                found.push(dir)
+            end
+        end
+        return found
+    end
+    def find(ch)
+        found = self.find_all(ch)
+        return nil if found.length == 0 
+        return found.sample
     end
 end
 
-class Carrion
+class Wall
 end
 
-world = World.new($plan, {"#": Wall, "o": BouncingCritter})
+class Carrion
+    attr_accessor :origin_char
+    def self.origin_char
+        return "%"
+    end
+end
+
+world = World.new($plan, {"#": Wall, "o": BouncingCritter, "%": Carrion})
 
 def show_frame(world)
     world.turn
     puts `clear`
     puts world.to_string
+    sleep(1)
 end
-show_frame(world)
+(0..5).each do
+    show_frame(world)
+end
